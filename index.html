@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件格式转换工具</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>文件格式转换工具</h1>
+            <p>支持文件与PDF格式的双向转换</p>
+        </header>
+
+        <main>
+            <!-- 转换模式选择 -->
+            <div class="mode-selection">
+                <div class="mode-tabs">
+                    <button class="mode-tab active" id="toPdfTab">文件转PDF</button>
+                    <button class="mode-tab" id="fromPdfTab">PDF转文件</button>
+                </div>
+            </div>
+
+            <!-- 文件转PDF模式 -->
+            <div class="conversion-mode" id="toPdfMode">
+                <div class="upload-section">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📁</div>
+                        <h3>拖拽文件到此处或点击选择文件</h3>
+                        <p>支持的格式：TXT、DOCX、XLSX、XLS、JPG、PNG、GIF、BMP</p>
+                        <p style="font-size: 0.8em; color: #888;">注意：DOC格式支持有限，建议使用DOCX格式</p>
+                        <input type="file" id="fileInput" multiple accept=".txt,.doc,.docx,.xlsx,.xls,.jpg,.jpeg,.png,.gif,.bmp" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
+                    </div>
+                </div>
+
+                <div class="file-list" id="fileList">
+                    <h3>已选择的文件</h3>
+                    <div id="selectedFiles"></div>
+                </div>
+
+                <div class="controls">
+                    <button id="convertBtn" class="convert-btn" disabled>转换为PDF</button>
+                    <button id="clearBtn" class="clear-btn">清空文件</button>
+                </div>
+            </div>
+
+            <!-- PDF转文件模式 -->
+            <div class="conversion-mode" id="fromPdfMode" style="display: none;">
+                <div class="upload-section">
+                    <div class="upload-area" id="pdfUploadArea">
+                        <div class="upload-icon">📄</div>
+                        <h3>拖拽PDF文件到此处或点击选择文件</h3>
+                        <p>支持PDF格式文件</p>
+                        <input type="file" id="pdfFileInput" accept=".pdf" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
+                    </div>
+                </div>
+
+                <div class="pdf-file-info" id="pdfFileInfo" style="display: none;">
+                    <h3>PDF文件信息</h3>
+                    <div id="pdfDetails"></div>
+                </div>
+
+                <div class="conversion-options" id="conversionOptions" style="display: none;">
+                    <h3>选择转换格式</h3>
+                    <div class="format-options">
+                        <button class="format-btn" data-format="txt">
+                            <span class="format-icon">📄</span>
+                            <span class="format-name">文本文件 (TXT)</span>
+                        </button>
+                        <button class="format-btn" data-format="docx">
+                            <span class="format-icon">📘</span>
+                            <span class="format-name">Word文档 (DOCX)</span>
+                        </button>
+                        <button class="format-btn" data-format="xlsx">
+                            <span class="format-icon">📊</span>
+                            <span class="format-name">Excel表格 (XLSX)</span>
+                        </button>
+                        <button class="format-btn" data-format="png">
+                            <span class="format-icon">🖼️</span>
+                            <span class="format-name">PNG图片</span>
+                        </button>
+                        <button class="format-btn" data-format="jpg">
+                            <span class="format-icon">🖼️</span>
+                            <span class="format-name">JPG图片</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="controls" id="pdfControls" style="display: none;">
+                    <button id="convertFromPdfBtn" class="convert-btn" disabled>开始转换</button>
+                    <button id="clearPdfBtn" class="clear-btn">清空文件</button>
+                </div>
+            </div>
+
+            <div class="preview-section" id="previewSection" style="display: none;">
+                <h3>预览</h3>
+                <div id="previewContent"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 简化的文件转换器 - 专门解决文件选择问题
+        class SimpleFileConverter {
+            constructor() {
+                this.selectedFiles = [];
+                this.selectedPdfFile = null;
+                this.selectedFormat = null;
+                this.init();
+            }
+
+            init() {
+                console.log('🚀 初始化文件转换器...');
+                
+                // 等待DOM完全加载
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', () => this.setupAll());
+                } else {
+                    this.setupAll();
+                }
+            }
+
+            setupAll() {
+                console.log('📋 设置所有事件监听器...');
+                
+                // 设置模式切换
+                this.setupModeSwitch();
+                
+                // 设置文件转PDF
+                this.setupFileToPdf();
+                
+                // 设置PDF转文件
+                this.setupPdfToFile();
+                
+                console.log('✅ 所有事件监听器设置完成');
+            }
+
+            setupModeSwitch() {
+                const toPdfTab = document.getElementById('toPdfTab');
+                const fromPdfTab = document.getElementById('fromPdfTab');
+                const toPdfMode = document.getElementById('toPdfMode');
+                const fromPdfMode = document.getElementById('fromPdfMode');
+
+                if (toPdfTab && fromPdfTab) {
+                    toPdfTab.onclick = () => {
+                        toPdfTab.classList.add('active');
+                        fromPdfTab.classList.remove('active');
+                        if (toPdfMode) toPdfMode.style.display = 'block';
+                        if (fromPdfMode) fromPdfMode.style.display = 'none';
+                        console.log('🔄 切换到文件转PDF模式');
+                    };
+
+                    fromPdfTab.onclick = () => {
+                        fromPdfTab.classList.add('active');
+                        toPdfTab.classList.remove('active');
+                        if (fromPdfMode) fromPdfMode.style.display = 'block';
+                        if (toPdfMode) toPdfMode.style.display = 'none';
+                        console.log('🔄 切换到PDF转文件模式');
+                    };
+                }
+            }
+
+            setupFileToPdf() {
+                const fileInput = document.getElementById('fileInput');
+                const uploadArea = document.getElementById('uploadArea');
+                const convertBtn = document.getElementById('convertBtn');
+                const clearBtn = document.getElementById('clearBtn');
+
+                console.log('📁 设置文件转PDF事件...');
+                console.log('- fileInput:', !!fileInput);
+                console.log('- uploadArea:', !!uploadArea);
+
+                if (fileInput) {
+                    // 直接绑定文件输入变化事件
+                    fileInput.onchange = (e) => {
+                        console.log('📁 文件选择变化:', e.target.files.length, '个文件');
+                        this.handleFiles(e.target.files);
+                    };
+                    
+                    // 确保文件输入可以被点击
+                    fileInput.style.pointerEvents = 'auto';
+                    fileInput.style.zIndex = '10';
+                    
+                    console.log('✅ 文件输入事件绑定完成');
+                }
+
+                if (uploadArea) {
+                    // 拖拽事件
+                    uploadArea.ondragover = (e) => {
+                        e.preventDefault();
+                        uploadArea.classList.add('dragover');
+                    };
+                    
+                    uploadArea.ondragleave = (e) => {
+                        e.preventDefault();
+                        uploadArea.classList.remove('dragover');
+                    };
+                    
+                    uploadArea.ondrop = (e) => {
+                        e.preventDefault();
+                        uploadArea.classList.remove('dragover');
+                        console.log('📁 拖拽文件:', e.dataTransfer.files.length, '个');
+                        this.handleFiles(e.dataTransfer.files);
+                    };
+                }
+
+                if (convertBtn) {
+                    convertBtn.onclick = () => this.convertToPdf();
+                }
+
+                if (clearBtn) {
+                    clearBtn.onclick = () => this.clearFiles();
+                }
+            }
+
+            setupPdfToFile() {
+                const pdfFileInput = document.getElementById('pdfFileInput');
+                const pdfUploadArea = document.getElementById('pdfUploadArea');
+                const convertFromPdfBtn = document.getElementById('convertFromPdfBtn');
+                const clearPdfBtn = document.getElementById('clearPdfBtn');
+
+                console.log('📄 设置PDF转文件事件...');
+                console.log('- pdfFileInput:', !!pdfFileInput);
+                console.log('- pdfUploadArea:', !!pdfUploadArea);
+
+                if (pdfFileInput) {
+                    pdfFileInput.onchange = (e) => {
+                        console.log('📄 PDF文件选择变化');
+                        if (e.target.files.length > 0) {
+                            this.handlePdfFile(e.target.files[0]);
+                        }
+                    };
+                    
+                    // 确保PDF文件输入可以被点击
+                    pdfFileInput.style.pointerEvents = 'auto';
+                    pdfFileInput.style.zIndex = '10';
+                }
+
+                if (pdfUploadArea) {
+                    pdfUploadArea.ondragover = (e) => {
+                        e.preventDefault();
+                        pdfUploadArea.classList.add('dragover');
+                    };
+                    
+                    pdfUploadArea.ondragleave = (e) => {
+                        e.preventDefault();
+                        pdfUploadArea.classList.remove('dragover');
+                    };
+                    
+                    pdfUploadArea.ondrop = (e) => {
+                        e.preventDefault();
+                        pdfUploadArea.classList.remove('dragover');
+                        if (e.dataTransfer.files.length > 0) {
+                            this.handlePdfFile(e.dataTransfer.files[0]);
+                        }
+                    };
+                }
+
+                // 格式选择按钮
+                const formatBtns = document.querySelectorAll('.format-btn');
+                formatBtns.forEach(btn => {
+                    btn.onclick = () => {
+                        formatBtns.forEach(b => b.classList.remove('selected'));
+                        btn.classList.add('selected');
+                        this.selectedFormat = btn.getAttribute('data-format');
+                        this.updatePdfConvertButton();
+                        console.log('🎯 选择格式:', this.selectedFormat);
+                    };
+                });
+
+                if (convertFromPdfBtn) {
+                    convertFromPdfBtn.onclick = () => this.convertPdfToFile();
+                }
+
+                if (clearPdfBtn) {
+                    clearPdfBtn.onclick = () => this.clearPdfFile();
+                }
+            }
+
+            handleFiles(files) {
+                console.log('📁 处理文件:', files.length, '个');
+                this.selectedFiles = Array.from(files);
+                this.displaySelectedFiles();
+                this.updateConvertButton();
+            }
+
+            handlePdfFile(file) {
+                console.log('📄 处理PDF文件:', file.name);
+                if (file && file.type === 'application/pdf') {
+                    this.selectedPdfFile = file;
+                    this.displayPdfInfo(file);
+                    this.showPdfOptions();
+                } else {
+                    alert('请选择PDF格式的文件');
+                }
+            }
+
+            displaySelectedFiles() {
+                const container = document.getElementById('selectedFiles');
+                if (!container) return;
+
+                if (this.selectedFiles.length === 0) {
+                    container.innerHTML = '<p>暂无选择文件</p>';
+                    return;
+                }
+
+                const html = this.selectedFiles.map((file, index) => `
+                    <div class="file-item">
+                        <div class="file-info">
+                            <div class="file-details">
+                                <h4>${file.name}</h4>
+                                <p>${this.formatFileSize(file.size)}</p>
+                            </div>
+                        </div>
+                        <button class="remove-btn" onclick="converter.removeFile(${index})">×</button>
+                    </div>
+                `).join('');
+
+                container.innerHTML = html;
+            }
+
+            displayPdfInfo(file) {
+                const container = document.getElementById('pdfDetails');
+                if (!container) return;
+
+                const lastModified = new Date(file.lastModified).toLocaleString('zh-CN');
+                
+                container.innerHTML = `
+                    <div class="pdf-info-item">
+                        <span class="pdf-info-label">文件名:</span>
+                        <span class="pdf-info-value">${file.name}</span>
+                    </div>
+                    <div class="pdf-info-item">
+                        <span class="pdf-info-label">文件大小:</span>
+                        <span class="pdf-info-value">${this.formatFileSize(file.size)}</span>
+                    </div>
+                    <div class="pdf-info-item">
+                        <span class="pdf-info-label">修改时间:</span>
+                        <span class="pdf-info-value">${lastModified}</span>
+                    </div>
+                    <div class="pdf-info-item">
+                        <span class="pdf-info-label">状态:</span>
+                        <span class="pdf-info-value">✅ PDF文件已选择</span>
+                    </div>
+                `;
+            }
+
+            showPdfOptions() {
+                const elements = ['pdfFileInfo', 'conversionOptions', 'pdfControls'];
+                elements.forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) element.style.display = 'block';
+                });
+            }
+
+            removeFile(index) {
+                this.selectedFiles.splice(index, 1);
+                this.displaySelectedFiles();
+                this.updateConvertButton();
+            }
+
+            clearFiles() {
+                this.selectedFiles = [];
+                this.displaySelectedFiles();
+                this.updateConvertButton();
+                const fileInput = document.getElementById('fileInput');
+                if (fileInput) fileInput.value = '';
+            }
+
+            clearPdfFile() {
+                this.selectedPdfFile = null;
+                this.selectedFormat = null;
+                
+                const elements = ['pdfDetails', 'pdfFileInfo', 'conversionOptions', 'pdfControls'];
+                elements.forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) {
+                        if (id === 'pdfDetails') {
+                            element.innerHTML = '';
+                        } else {
+                            element.style.display = 'none';
+                        }
+                    }
+                });
+                
+                const formatBtns = document.querySelectorAll('.format-btn');
+                formatBtns.forEach(btn => btn.classList.remove('selected'));
+                
+                this.updatePdfConvertButton();
+                const pdfFileInput = document.getElementById('pdfFileInput');
+                if (pdfFileInput) pdfFileInput.value = '';
+            }
+
+            updateConvertButton() {
+                const convertBtn = document.getElementById('convertBtn');
+                if (convertBtn) {
+                    convertBtn.disabled = this.selectedFiles.length === 0;
+                }
+            }
+
+            updatePdfConvertButton() {
+                const convertBtn = document.getElementById('convertFromPdfBtn');
+                if (convertBtn) {
+                    convertBtn.disabled = !this.selectedPdfFile || !this.selectedFormat;
+                }
+            }
+
+            formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            }
+
+            async convertToPdf() {
+                if (this.selectedFiles.length === 0) return;
+
+                const convertBtn = document.getElementById('convertBtn');
+                const originalText = convertBtn.textContent;
+                
+                try {
+                    convertBtn.textContent = '转换中...';
+                    convertBtn.disabled = true;
+
+                    console.log('🔄 开始转换为PDF...');
+                    
+                    if (typeof window.jspdf === 'undefined') {
+                        throw new Error('jsPDF库未加载');
+                    }
+
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF();
+                    let isFirstPage = true;
+
+                    for (const file of this.selectedFiles) {
+                        if (!isFirstPage) {
+                            pdf.addPage();
+                        }
+                        await this.addFileToPdf(pdf, file);
+                        isFirstPage = false;
+                    }
+
+                    pdf.save('converted-files.pdf');
+                    console.log('✅ PDF转换完成');
+                    
+                } catch (error) {
+                    console.error('❌ 转换失败:', error);
+                    alert(`转换失败: ${error.message}`);
+                } finally {
+                    convertBtn.textContent = originalText;
+                    convertBtn.disabled = false;
+                }
+            }
+
+            async addFileToPdf(pdf, file) {
+                const fileType = file.type;
+                const fileName = file.name.toLowerCase();
+
+                if (fileType.startsWith('image/')) {
+                    await this.addImageToPdf(pdf, file);
+                } else if (fileType === 'text/plain' || fileName.endsWith('.txt')) {
+                    await this.addTextToPdf(pdf, file);
+                } else {
+                    // 简化处理，其他格式暂时作为文本处理
+                    await this.addTextToPdf(pdf, file);
+                }
+            }
+
+            async addImageToPdf(pdf, file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const img = new Image();
+                            img.onload = () => {
+                                const pageWidth = pdf.internal.pageSize.getWidth();
+                                const pageHeight = pdf.internal.pageSize.getHeight();
+                                const margin = 20;
+                                
+                                const maxWidth = pageWidth - 2 * margin;
+                                const maxHeight = pageHeight - 2 * margin;
+                                
+                                let { width, height } = this.calculateImageSize(img.width, img.height, maxWidth, maxHeight);
+                                
+                                const x = (pageWidth - width) / 2;
+                                const y = (pageHeight - height) / 2;
+                                
+                                pdf.addImage(e.target.result, 'JPEG', x, y, width, height);
+                                resolve();
+                            };
+                            img.onerror = () => reject(new Error('图片加载失败'));
+                            img.src = e.target.result;
+                        } catch (error) {
+                            reject(error);
+                        }
+                    };
+                    reader.onerror = () => reject(new Error('文件读取失败'));
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            async addTextToPdf(pdf, file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const text = e.target.result || '无法读取文件内容';
+                            const lines = text.split('\n');
+                            
+                            pdf.setFontSize(12);
+                            const pageHeight = pdf.internal.pageSize.getHeight();
+                            const margin = 20;
+                            const lineHeight = 7;
+                            const maxLinesPerPage = Math.floor((pageHeight - 2 * margin) / lineHeight);
+                            
+                            let currentLine = 0;
+                            let y = margin;
+                            
+                            // 添加文件名作为标题
+                            pdf.setFontSize(14);
+                            pdf.text(`文件: ${file.name}`, margin, y);
+                            y += lineHeight * 2;
+                            pdf.setFontSize(12);
+                            currentLine += 2;
+                            
+                            for (const line of lines) {
+                                if (currentLine >= maxLinesPerPage) {
+                                    pdf.addPage();
+                                    y = margin;
+                                    currentLine = 0;
+                                }
+                                
+                                pdf.text(line || '', margin, y);
+                                y += lineHeight;
+                                currentLine++;
+                            }
+                            
+                            resolve();
+                        } catch (error) {
+                            reject(error);
+                        }
+                    };
+                    reader.onerror = () => reject(new Error('文件读取失败'));
+                    reader.readAsText(file, 'UTF-8');
+                });
+            }
+
+            calculateImageSize(originalWidth, originalHeight, maxWidth, maxHeight) {
+                let width = originalWidth;
+                let height = originalHeight;
+                
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+                
+                if (height > maxHeight) {
+                    width = (width * maxHeight) / height;
+                    height = maxHeight;
+                }
+                
+                return { width, height };
+            }
+
+            async convertPdfToFile() {
+                if (!this.selectedPdfFile || !this.selectedFormat) {
+                    alert('请选择PDF文件和输出格式');
+                    return;
+                }
+
+                const convertBtn = document.getElementById('convertFromPdfBtn');
+                const originalText = convertBtn.textContent;
+                
+                try {
+                    convertBtn.textContent = '转换中...';
+                    convertBtn.disabled = true;
+
+                    console.log('🔄 开始PDF转换...', this.selectedFormat);
+                    const arrayBuffer = await this.selectedPdfFile.arrayBuffer();
+                    
+                    switch (this.selectedFormat) {
+                        case 'txt':
+                            await this.convertPdfToText(arrayBuffer);
+                            break;
+                        case 'docx':
+                            await this.convertPdfToDocx(arrayBuffer);
+                            break;
+                        case 'xlsx':
+                            await this.convertPdfToExcel(arrayBuffer);
+                            break;
+                        case 'png':
+                        case 'jpg':
+                            await this.convertPdfToImages(arrayBuffer, this.selectedFormat);
+                            break;
+                        default:
+                            throw new Error('不支持的输出格式');
+                    }
+                    
+                    console.log('✅ PDF转换完成');
+                    
+                } catch (error) {
+                    console.error('❌ 转换失败:', error);
+                    alert(`转换失败: ${error.message}`);
+                } finally {
+                    convertBtn.textContent = originalText;
+                    convertBtn.disabled = false;
+                }
+            }
+
+            async convertPdfToText(arrayBuffer) {
+                try {
+                    if (typeof pdfjsLib === 'undefined') {
+                        throw new Error('PDF.js库未加载');
+                    }
+                    
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    
+                    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                    const pdf = await loadingTask.promise;
+                    
+                    let fullText = '';
+                    
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        const pageText = textContent.items.map(item => item.str).join(' ');
+                        fullText += `第${i}页:\n${pageText}\n\n`;
+                    }
+                    
+                    const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
+                    const fileName = this.selectedPdfFile.name.replace('.pdf', '.txt');
+                    this.downloadFile(blob, fileName);
+                    
+                } catch (error) {
+                    throw new Error(`PDF转文本失败: ${error.message}`);
+                }
+            }
+
+            async convertPdfToDocx(arrayBuffer) {
+                try {
+                    if (typeof pdfjsLib === 'undefined') {
+                        throw new Error('PDF.js库未加载');
+                    }
+                    if (typeof JSZip === 'undefined') {
+                        throw new Error('JSZip库未加载');
+                    }
+                    
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    
+                    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                    const pdf = await loadingTask.promise;
+                    
+                    let allText = [];
+                    
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        
+                        allText.push(`=== 第${i}页 ===`);
+                        
+                        textContent.items.forEach(item => {
+                            if (item.str.trim()) {
+                                allText.push(item.str.trim());
+                            }
+                        });
+                        
+                        allText.push('');
+                    }
+                    
+                    // 创建DOCX文档
+                    const docContent = allText.map(text => 
+                        text ? `<w:p><w:r><w:t>${this.escapeXml(text)}</w:t></w:r></w:p>` : '<w:p></w:p>'
+                    ).join('');
+                    
+                    const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+    <w:body>
+        ${docContent}
+    </w:body>
+</w:document>`;
+                    
+                    // 创建ZIP文件结构
+                    const zip = new JSZip();
+                    
+                    zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+    <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+    <Default Extension="xml" ContentType="application/xml"/>
+    <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+                    
+                    zip.folder('_rels').file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+                    
+                    zip.folder('word').file('document.xml', docXml);
+                    
+                    zip.folder('word/_rels').file('document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+</Relationships>`);
+                    
+                    const blob = await zip.generateAsync({ type: 'blob' });
+                    const fileName = this.selectedPdfFile.name.replace('.pdf', '.docx');
+                    this.downloadFile(blob, fileName);
+                    
+                } catch (error) {
+                    throw new Error(`PDF转DOCX失败: ${error.message}`);
+                }
+            }
+
+            async convertPdfToExcel(arrayBuffer) {
+                try {
+                    if (typeof pdfjsLib === 'undefined') {
+                        throw new Error('PDF.js库未加载');
+                    }
+                    if (typeof XLSX === 'undefined') {
+                        throw new Error('XLSX库未加载');
+                    }
+                    
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    
+                    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                    const pdf = await loadingTask.promise;
+                    
+                    const workbook = XLSX.utils.book_new();
+                    
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        
+                        const pageText = textContent.items
+                            .map(item => item.str)
+                            .filter(str => str.trim())
+                            .join('\n');
+                        
+                        const worksheetData = [
+                            [`第${i}页内容`],
+                            [pageText]
+                        ];
+                        
+                        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+                        
+                        worksheet['!cols'] = [
+                            { wch: 15 },
+                            { wch: 80 }
+                        ];
+                        
+                        worksheet['!rows'] = [
+                            { hpt: 20 },
+                            { hpt: 200 }
+                        ];
+                        
+                        XLSX.utils.book_append_sheet(workbook, worksheet, `第${i}页`);
+                    }
+                    
+                    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+                    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    const fileName = this.selectedPdfFile.name.replace('.pdf', '.xlsx');
+                    this.downloadFile(blob, fileName);
+                    
+                } catch (error) {
+                    throw new Error(`PDF转Excel失败: ${error.message}`);
+                }
+            }
+
+            async convertPdfToImages(arrayBuffer, format) {
+                try {
+                    if (typeof pdfjsLib === 'undefined') {
+                        throw new Error('PDF.js库未加载');
+                    }
+                    
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    
+                    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                    const pdf = await loadingTask.promise;
+                    
+                    const images = [];
+                    
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const viewport = page.getViewport({ scale: 2.0 });
+                        
+                        const canvas = document.createElement('canvas');
+                        const context = canvas.getContext('2d');
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        
+                        const renderContext = {
+                            canvasContext: context,
+                            viewport: viewport
+                        };
+                        
+                        await page.render(renderContext).promise;
+                        
+                        const imageDataUrl = canvas.toDataURL(`image/${format}`, 0.95);
+                        images.push({
+                            dataUrl: imageDataUrl,
+                            pageNumber: i
+                        });
+                    }
+                    
+                    // 如果只有一页，直接下载
+                    if (images.length === 1) {
+                        const fileName = this.selectedPdfFile.name.replace('.pdf', `.${format}`);
+                        this.downloadDataUrl(images[0].dataUrl, fileName);
+                    } else {
+                        // 多页时创建ZIP文件
+                        if (typeof JSZip === 'undefined') {
+                            throw new Error('JSZip库未加载，无法打包多页图片');
+                        }
+                        
+                        const zip = new JSZip();
+                        const baseName = this.selectedPdfFile.name.replace('.pdf', '');
+                        
+                        images.forEach(img => {
+                            const fileName = `${baseName}_第${img.pageNumber}页.${format}`;
+                            const base64Data = img.dataUrl.split(',')[1];
+                            zip.file(fileName, base64Data, { base64: true });
+                        });
+                        
+                        const zipBlob = await zip.generateAsync({ type: 'blob' });
+                        this.downloadFile(zipBlob, `${baseName}_图片.zip`);
+                    }
+                    
+                } catch (error) {
+                    throw new Error(`PDF转图片失败: ${error.message}`);
+                }
+            }
+
+            escapeXml(text) {
+                return text
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&apos;');
+            }
+
+            downloadFile(blob, fileName) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            downloadDataUrl(dataUrl, fileName) {
+                const a = document.createElement('a');
+                a.href = dataUrl;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        }
+
+        // 创建全局实例
+        let converter;
+        
+        // 确保在页面加载完成后初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                converter = new SimpleFileConverter();
+            });
+        } else {
+            converter = new SimpleFileConverter();
+        }
+    </script>
+</body>
+</html>
